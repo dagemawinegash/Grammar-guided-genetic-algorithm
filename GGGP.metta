@@ -23,6 +23,7 @@
 
 
 ;;;;;; truth table definition ;;;;;;
+; C, A or C
 !(bind! &truth_table_data (
     ((False False False) False)
     ((False False True) True)
@@ -125,9 +126,9 @@
     )
 )
 
-!(generate-phenotype (2 0 0 1 2) start 10 0 0); expect [(AND (NOT A) C)]
-!(generate-phenotype (0 2 0) start 10 0 0) ; expect A
-!(generate-phenotype (0 1 0 2 2) start 10 0 0) ; expect (NOT C)
+;!(generate-phenotype (2 0 0 1 2) start 10 0 0); expect [(AND (NOT A) C)]
+;!(generate-phenotype (0 2 0) start 10 0 0) ; expect A
+;!(generate-phenotype (0 1 0 2 2) start 10 0 0) ; expect (NOT C)
 
 
 ;;;;;; phenotype evaluation function ;;;;;;
@@ -547,5 +548,117 @@
 ;!(random-reset-mutation (0 1 2 3))
 
 
+;;;;;;; Main Genetic Algorithm Function ;;;;;;
+
+;; convert genotype to phenotype and evaluate fitness
+(= (evaluate-population $population $acc $idx)
+    (if (>= $idx (size-atom $population))
+        $acc
+        (let* (
+            ($genotype (nth-elem $population $idx))
+            ($phenotype (generate-phenotype $genotype start 10 0 0))
+            ($fitness (fitness-evaluator $phenotype))
+        )
+            (evaluate-population $population (append $acc ($genotype $phenotype $fitness)) (+ $idx 1))
+        )
+    )
+)
 
 
+;!(evaluate-population ((1 2 3 4 5) (2 0 0 1 2)) () 0)
+
+;; extract genotypes, phenotypes, and fitnesses from evaluated population
+(= (extract-genotypes $evaluated-pop $acc $idx)
+    (if (>= $idx (size-atom $evaluated-pop))
+        $acc
+        (let* (
+            ($individual (nth-elem $evaluated-pop $idx))
+            ($genotype (car-atom $individual))
+        )
+            (extract-genotypes $evaluated-pop (append $acc $genotype) (+ $idx 1))
+        )
+    )
+)
+;!(extract-genotypes (((1 2 3 4 5) A 4) ((2 0 0 1 2) (AND (NOT A) C) 6)) () 0)
+
+(= (extract-phenotypes $evaluated-pop $acc $idx)
+    (if (>= $idx (size-atom $evaluated-pop))
+        $acc
+        (let* (
+            ($individual (nth-elem $evaluated-pop $idx))
+            ($phenotype (index-atom $individual 1))
+        )
+            (extract-phenotypes $evaluated-pop (append $acc $phenotype) (+ $idx 1))
+        )
+    )
+)
+
+;!(extract-phenotypes (((1 2 3 4 5) A 4) ((2 0 0 1 2) (AND (NOT A) C) 6)) () 0)
+
+
+(= (extract-fitnesses $evaluated-pop $acc $idx)
+    (if (>= $idx (size-atom $evaluated-pop))
+        $acc
+        (let* (
+            ($individual (nth-elem $evaluated-pop $idx))
+            ($fitness (index-atom $individual 2))
+        )
+            (extract-fitnesses $evaluated-pop (append $acc $fitness) (+ $idx 1))
+        )
+    )
+)
+
+;!(extract-fitnesses (((1 2 3 4 5) A 4) ((2 0 0 1 2) (AND (NOT A) C) 6)) () 0)
+
+;; create new population through selection, crossover, and mutation
+(= (create-new-population $population $fitnesses $new-pop $idx)
+    (if (>= $idx POP_SIZE)
+        $new-pop
+        (let* (
+            ($parent1 (tournament-selection $population $fitnesses 2))
+            ($parent2 (tournament-selection $population $fitnesses 2))
+            ($offspring (single-point-crossover-main $parent1 $parent2))
+            ($child1 (car-atom $offspring))
+            ($child2 (index-atom $offspring 1))
+            ($mutated-child1 (random-reset-mutation $child1))
+            ($mutated-child2 (random-reset-mutation $child2))
+        )
+            (if (== $idx (- POP_SIZE 1))
+                (create-new-population $population $fitnesses (append $new-pop $mutated-child1) (+ $idx 1))
+                (create-new-population $population $fitnesses (append (append $new-pop $mutated-child1) $mutated-child2) (+ $idx 2))
+            )
+        )
+    )
+)
+
+;!(create-new-population ((1 2 3 4 5) (2 0 0 1 2)) (6 4) () 0)
+
+;; main GA function
+(= (genetic-algorithm $generations $current-gen $population $best-fitness $best-phenotype)
+    (if (>= $current-gen $generations)
+        ($best-fitness $best-phenotype)
+        (let* (
+            ($current-population (if (== $current-gen 0) (initialize-genotype) $population))
+            ($evaluated-pop (evaluate-population $current-population () 0))
+            ($genotypes (extract-genotypes $evaluated-pop () 0))
+            ($phenotypes (extract-phenotypes $evaluated-pop () 0))
+            ($fitnesses (extract-fitnesses $evaluated-pop () 0))
+            ($max-fitness (max-atom $fitnesses))
+            ($max-fitness-idx (index-of $fitnesses $max-fitness))
+            ($best-phenotype-this-gen (nth-elem $phenotypes $max-fitness-idx))
+            ($new-best-fitness (if (> $max-fitness $best-fitness) $max-fitness $best-fitness))
+            ($new-best-phenotype (if (> $max-fitness $best-fitness) $best-phenotype-this-gen $best-phenotype))
+            ($elite-individuals (elite-selection $genotypes $fitnesses))
+            ($remaining-pop (create-new-population $genotypes $fitnesses () 0)) 
+            ($new-population (union-atom $elite-individuals $remaining-pop))
+        )
+            (genetic-algorithm $generations (+ $current-gen 1) $new-population $new-best-fitness $new-best-phenotype)
+        )
+    )
+)
+
+(= (run-genetic-algorithm $generations)
+    (genetic-algorithm $generations 0 () 0 ())
+)
+
+!(run-genetic-algorithm 2)
